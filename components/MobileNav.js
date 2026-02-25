@@ -33,7 +33,10 @@ export default function MobileNav() {
 
     // Close mobile menu when route changes
     useEffect(() => {
-        setIsOpen(false)
+        const timer = setTimeout(() => {
+            setIsOpen(false)
+        }, 0)
+        return () => clearTimeout(timer)
     }, [pathname])
 
     const navItems = [
