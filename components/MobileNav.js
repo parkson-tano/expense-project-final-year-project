@@ -153,8 +153,8 @@ export default function MobileNav() {
                                 <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
                             </div>
                             <div className="flex-1 min-w-0">
-                                <p className="text-sm font-semibold text-gray-900 truncate">Alex Chen</p>
-                                <p className="text-xs text-gray-500 truncate">alex@example.com</p>
+                                <p className="text-sm font-semibold text-gray-900 truncate">Jasmine M</p>
+                                <p className="text-xs text-gray-500 truncate">jasmine.m@example.com</p>
                             </div>
                             <button className="p-2 hover:bg-gray-200 rounded-lg transition-colors">
                                 <ArrowRightOnRectangleIcon className="w-4 h-4 text-gray-500" />
@@ -232,8 +232,8 @@ export default function MobileNav() {
                                     <span className="text-xl font-bold text-white">AC</span>
                                 </div>
                                 <div>
-                                    <h3 className="font-semibold text-gray-900">Alex Chen</h3>
-                                    <p className="text-sm text-gray-500">alex@example.com</p>
+                                    <h3 className="font-semibold text-gray-900">Jasmine M</h3>
+                                    <p className="text-sm text-gray-500">jasmine.m@example.com</p>
                                 </div>
                             </div>
                         </div>
