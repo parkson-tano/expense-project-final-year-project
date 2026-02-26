@@ -151,7 +151,7 @@ export default function MobileNav() {
                         <div className="flex items-center gap-3 px-4 py-3 bg-gray-50/80 rounded-xl">
                             <div className="relative">
                                 <div className="w-10 h-10 bg-gradient-to-br from-gray-700 to-gray-900 rounded-xl flex items-center justify-center">
-                                    <span className="text-sm font-semibold text-white">AC</span>
+                                    <span className="text-sm font-semibold text-white">JM</span>
                                 </div>
                                 <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
                             </div>
@@ -232,7 +232,7 @@ export default function MobileNav() {
                         <div className="p-6 border-b border-gray-100">
                             <div className="flex items-center gap-3">
                                 <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
-                                    <span className="text-xl font-bold text-white">AC</span>
+                                    <span className="text-xl font-bold text-white">JM</span>
                                 </div>
                                 <div>
                                     <h3 className="font-semibold text-gray-900">Jasmine M</h3>
