@@ -1,7 +1,7 @@
 // app/analytics/page.js
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   ChartBarIcon,
   CalendarIcon,
@@ -17,112 +17,224 @@ import {
   ChevronDownIcon,
   EllipsisHorizontalIcon
 } from '@heroicons/react/24/outline'
+import { useTransactions } from '@/hooks/useTransactions'
+import { useCategories } from '@/hooks/useCategories'
+import { useBudgets } from '@/hooks/useBudgets'
+import Link from 'next/link'
 
 export default function Analytics() {
   const [timeframe, setTimeframe] = useState('monthly')
-  const [selectedCategory, setSelectedCategory] = useState('all')
+  const { transactions, summary } = useTransactions()
+  const { categories } = useCategories()
+  const { budgets } = useBudgets()
 
-  const monthlyData = [
-    { month: 'Jan', income: 520000, expenses: 245000, savings: 275000 },
-    { month: 'Feb', income: 520000, expenses: 280000, savings: 240000 },
-    { month: 'Mar', income: 540000, expenses: 320000, savings: 220000 },
-    { month: 'Apr', income: 520000, expenses: 290000, savings: 230000 },
-    { month: 'May', income: 520000, expenses: 345000, savings: 175000 },
-    { month: 'Jun', income: 550000, expenses: 310000, savings: 240000 },
-  ]
+  const [analyticsData, setAnalyticsData] = useState({
+    categoryStats: [],
+    monthlyData: [],
+    totalExpenses: 0,
+    totalIncome: 0,
+    avgTransaction: 0,
+    largestCategory: { name: 'None', amount: 0 },
+    savingsRate: 0,
+    insights: []
+  })
 
-  const categoryTrends = [
-    {
-      category: 'Housing',
-      average: 350000,
-      trend: '+2.3%',
-      direction: 'up',
-      icon: HomeIcon,
-      color: 'from-blue-500 to-blue-600',
-      bgColor: 'bg-blue-50',
-      textColor: 'text-blue-600',
-      data: [320000, 335000, 342000, 350000, 348000, 355000]
-    },
-    {
-      category: 'Groceries',
-      average: 185000,
-      trend: '-5.2%',
-      direction: 'down',
-      icon: ShoppingBagIcon,
-      color: 'from-emerald-500 to-emerald-600',
-      bgColor: 'bg-emerald-50',
-      textColor: 'text-emerald-600',
-      data: [195000, 190000, 188000, 185000, 182000, 178000]
-    },
-    {
-      category: 'Transportation',
-      average: 125000,
-      trend: '+8.1%',
-      direction: 'up',
-      icon: TruckIcon,
-      color: 'from-amber-500 to-amber-600',
-      bgColor: 'bg-amber-50',
-      textColor: 'text-amber-600',
-      data: [115000, 118000, 122000, 125000, 130000, 135000]
-    },
-    {
-      category: 'Entertainment',
-      average: 95000,
-      trend: '+12.4%',
-      direction: 'up',
-      icon: FilmIcon,
-      color: 'from-purple-500 to-purple-600',
-      bgColor: 'bg-purple-50',
-      textColor: 'text-purple-600',
-      data: [85000, 88000, 92000, 95000, 102000, 108000]
-    },
-    {
-      category: 'Utilities',
-      average: 85000,
-      trend: '-3.2%',
-      direction: 'down',
-      icon: BoltIcon,
-      color: 'from-orange-500 to-orange-600',
-      bgColor: 'bg-orange-50',
-      textColor: 'text-orange-600',
-      data: [88000, 87000, 86000, 85000, 84000, 83000]
-    },
-  ]
-
-  const insights = [
-    {
-      type: 'warning',
-      title: 'Unusual spending detected',
-      message: 'Entertainment expenses are 12.4% above your monthly average',
-      impact: '+12,400 XAF this month',
-      action: 'Review transactions',
-      icon: '⚠️'
-    },
-    {
-      type: 'success',
-      title: 'Great job!',
-      message: 'You reduced grocery spending by 5.2% compared to last month',
-      impact: 'Saved 9,750 XAF',
-      action: 'See breakdown',
-      icon: '🎯'
-    },
-    {
-      type: 'info',
-      title: 'Savings opportunity',
-      message: 'You could save 25,000 XAF monthly by optimizing transportation',
-      impact: '300,000 XAF yearly',
-      action: 'Learn how',
-      icon: '💡'
-    },
-  ]
+  const { categoryStats, monthlyData, totalExpenses, totalIncome, avgTransaction, largestCategory, savingsRate, insights } = analyticsData
 
   const formatXAF = (amount) => {
+    if (!amount && amount !== 0) return '0 FCFA'
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'XAF',
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(amount).replace('XAF', 'FCFA')
+  }
+
+  const formatCompact = (amount) => {
+    if (amount >= 1000000) {
+      return (amount / 1000000).toFixed(1) + 'M'
+    } else if (amount >= 1000) {
+      return (amount / 1000).toFixed(0) + 'k'
+    }
+    return amount.toString()
+  }
+
+  useEffect(() => {
+    const transactionsArray = transactions || []
+    const stats = {}
+    const monthly = {}
+    let income = 0
+    let expenses = 0
+    let largestCategoryState = { name: 'None', amount: 0 }
+    let savingsRateState = 0
+    let statsArray = []
+    let monthlyArray = []
+    const newInsights = []
+
+    transactionsArray.forEach(t => {
+      const amount = Number(t.amount) || 0
+
+      // Track income/expense totals
+      if (t.type === 'income') {
+        income += amount
+      } else {
+        expenses += amount
+
+        // Category statistics (only for expenses)
+        const categoryId = t.category
+        const category = categories.find(c => c.id === categoryId) || t.category_details || { name: 'Uncategorized', color: 'gray', icon: '📦' }
+        const catName = category.name
+
+        if (!stats[catName]) {
+          stats[catName] = {
+            name: catName,
+            total: 0,
+            count: 0,
+            color: category.color || 'gray',
+            icon: category.icon || '📦',
+            categoryId
+          }
+        }
+        stats[catName].total += amount
+        stats[catName].count++
+      }
+
+      // Monthly data
+      if (t.date) {
+        const date = new Date(t.date)
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+        const monthName = date.toLocaleDateString('en-US', { month: 'short' })
+
+        if (!monthly[monthKey]) {
+          monthly[monthKey] = {
+            month: monthName,
+            fullMonth: date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' }),
+            income: 0,
+            expenses: 0,
+            savings: 0
+          }
+        }
+
+        if (t.type === 'income') {
+          monthly[monthKey].income += amount
+        } else {
+          monthly[monthKey].expenses += amount
+        }
+        monthly[monthKey].savings = monthly[monthKey].income - monthly[monthKey].expenses
+      }
+    })
+
+    // Sort and prepare category stats
+    statsArray = Object.values(stats).sort((a, b) => b.total - a.target)
+
+    // Set largest category
+    if (statsArray.length > 0) {
+      largestCategoryState = {
+        name: statsArray[0].name,
+        amount: statsArray[0].total
+      }
+    }
+
+    // Sort monthly data chronologically
+    monthlyArray = Object.values(monthly).slice(-6)
+
+    // Calculate totals and savings rate
+    savingsRateState = income > 0 ? Math.round(((income - expenses) / income) * 100) : 0
+
+    // Generate insights
+    statsArray.forEach(cat => {
+      if (cat.total > expenses * 0.3) {
+        newInsights.push({
+          type: 'warning',
+          title: 'High Spending Alert',
+          message: `${cat.name} represents ${Math.round((cat.total / expenses) * 100)}% of your expenses`,
+          impact: `${formatXAF(cat.total)} this month`,
+          action: 'Review transactions',
+          icon: '⚠️'
+        })
+      }
+    })
+
+    // Check savings rate
+    if (savingsRateState < 20) {
+      newInsights.push({
+        type: 'warning',
+        title: 'Low Savings Rate',
+        message: `You're saving only ${savingsRateState}% of your income`,
+        impact: `Target: 20% or more`,
+        action: 'See tips',
+        icon: '📉'
+      })
+    } else if (savingsRateState > 30) {
+      newInsights.push({
+        type: 'success',
+        title: 'Great Savings!',
+        message: `You're saving ${savingsRateState}% of your income`,
+        impact: 'Above average!',
+        action: 'Keep it up',
+        icon: '🎯'
+      })
+    }
+
+    // Check month-over-month change
+    if (monthlyArray.length >= 2) {
+      const lastMonth = monthlyArray[monthlyArray.length - 1]
+      const prevMonth = monthlyArray[monthlyArray.length - 2]
+
+      if (lastMonth && prevMonth) {
+        const expenseChange = ((lastMonth.expenses - prevMonth.expenses) / prevMonth.expenses) * 100
+        if (expenseChange > 10) {
+          newInsights.push({
+            type: 'warning',
+            title: 'Spending Increase',
+            message: `Your expenses increased by ${Math.round(expenseChange)}% from last month`,
+            impact: `${formatXAF(lastMonth.expenses - prevMonth.expenses)} more`,
+            action: 'Review',
+            icon: '📈'
+          })
+        } else if (expenseChange < -5) {
+          newInsights.push({
+            type: 'success',
+            title: 'Spending Decrease',
+            message: `Great job! Your expenses decreased by ${Math.abs(Math.round(expenseChange))}%`,
+            impact: `Saved ${formatXAF(prevMonth.expenses - lastMonth.expenses)}`,
+            action: 'Celebrate',
+            icon: '🎉'
+          })
+        }
+      }
+    }
+
+    // Update all state at once at the end
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setAnalyticsData({
+      categoryStats: statsArray,
+      monthlyData: monthlyArray,
+      totalExpenses: expenses,
+      totalIncome: income,
+      avgTransaction: transactionsArray.length > 0 ? (income + expenses) / transactionsArray.length : 0,
+      largestCategory: largestCategoryState,
+      savingsRate: savingsRateState,
+      insights: newInsights.slice(0, 3)
+    })
+  }, [transactions, categories])
+
+  // Budget recommendations
+  const getBudgetRecommendations = () => {
+    const recommendations = []
+
+    categoryStats.slice(0, 3).forEach(cat => {
+      const recommended = Math.round(cat.total * 0.9) // Suggest 10% reduction
+      recommendations.push({
+        category: cat.name,
+        current: cat.total,
+        recommended,
+        color: cat.color || 'purple'
+      })
+    })
+
+    return recommendations
   }
 
   return (
@@ -158,35 +270,37 @@ export default function Analytics() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
           title="Total Savings"
-          value={formatXAF(1380000)}
-          change="+8.2%"
-          trend="up"
-          subtitle="vs last 6 months"
+          value={formatXAF(totalIncome - totalExpenses)}
+          change={totalIncome > 0 ? `${Math.round(((totalIncome - totalExpenses) / totalIncome) * 100)}%` : '0%'}
+          trend={(totalIncome - totalExpenses) > 0 ? 'up' : 'down'}
+          subtitle="of total income"
           icon={BanknotesIcon}
           gradient="from-green-500 to-emerald-500"
         />
         <MetricCard
           title="Avg Monthly Spend"
-          value={formatXAF(315000)}
-          change="-2.1%"
-          trend="down"
-          subtitle="vs previous period"
+          value={formatXAF(Math.round(totalExpenses / (monthlyData.length || 1)))}
+          change={monthlyData.length >= 2 ?
+            `${Math.round(((monthlyData[monthlyData.length - 1]?.expenses - monthlyData[monthlyData.length - 2]?.expenses) / (monthlyData[monthlyData.length - 2]?.expenses || 1)) * 100)}%` :
+            '0%'}
+          trend="neutral"
+          subtitle="vs previous month"
           icon={ChartBarIcon}
           gradient="from-blue-500 to-indigo-500"
         />
         <MetricCard
           title="Largest Category"
-          value="Housing"
-          subtitle={formatXAF(350000) + '/month'}
+          value={largestCategory.name}
+          subtitle={formatXAF(largestCategory.amount) + '/month'}
           icon={HomeIcon}
           gradient="from-purple-500 to-pink-500"
           isCategory
         />
         <MetricCard
           title="Savings Rate"
-          value="38%"
-          change="+3.2%"
-          trend="up"
+          value={`${savingsRate}%`}
+          change={savingsRate > 20 ? '+Good' : '-Low'}
+          trend={savingsRate > 20 ? 'up' : 'down'}
           subtitle="of total income"
           icon={ArrowTrendingUpIcon}
           gradient="from-amber-500 to-orange-500"
@@ -205,187 +319,77 @@ export default function Analytics() {
                   <h2 className="text-lg font-semibold text-gray-900">Where your money goes</h2>
                   <p className="text-sm text-gray-500 mt-1">Monthly spending breakdown by category</p>
                 </div>
-                <button className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
+                <Link href="/categories" className="text-sm text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1">
                   <span>View all</span>
                   <span>→</span>
-                </button>
+                </Link>
               </div>
             </div>
 
             {/* Category Summary Cards - Easy to scan */}
             <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Housing - Highest expense */}
-              <div className="bg-gradient-to-br from-blue-50 to-blue-100/50 rounded-xl p-4 border border-blue-200/50">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center shadow-sm">
-                      <HomeIcon className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-900">Housing</h3>
-                      <p className="text-xs text-blue-600 font-medium">34% of spending</p>
-                    </div>
-                  </div>
-                  <span className="text-red-600 text-sm font-medium flex items-center gap-1">
-                    <ArrowTrendingUpIcon className="w-3 h-3" />
-                    +2.3%
-                  </span>
-                </div>
-                <div className="flex items-end justify-between">
-                  <div>
-                    <p className="text-sm text-gray-500">Monthly average</p>
-                    <p className="text-xl font-bold text-gray-900">350,000 FCFA</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-gray-500">vs last month</p>
-                    <p className="text-sm font-medium text-gray-700">+8,000 FCFA</p>
-                  </div>
-                </div>
-                {/* Simple progress bar */}
-                <div className="mt-3">
-                  <div className="h-2 bg-blue-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-600 rounded-full" style={{ width: '34%' }} />
-                  </div>
-                </div>
-              </div>
+              {categoryStats.slice(0, 4).map((cat, index) => {
+                const colors = {
+                  blue: { bg: 'from-blue-50 to-blue-100/50', border: 'border-blue-200/50', icon: 'bg-blue-500', text: 'text-blue-600' },
+                  green: { bg: 'from-emerald-50 to-emerald-100/50', border: 'border-emerald-200/50', icon: 'bg-emerald-500', text: 'text-emerald-600' },
+                  amber: { bg: 'from-amber-50 to-amber-100/50', border: 'border-amber-200/50', icon: 'bg-amber-500', text: 'text-amber-600' },
+                  purple: { bg: 'from-purple-50 to-purple-100/50', border: 'border-purple-200/50', icon: 'bg-purple-500', text: 'text-purple-600' },
+                  gray: { bg: 'from-gray-50 to-gray-100/50', border: 'border-gray-200/50', icon: 'bg-gray-500', text: 'text-gray-600' },
+                }
+                const colorStyle = colors[cat.color] || colors.gray
+                const percentage = totalExpenses > 0 ? Math.round((cat.total / totalExpenses) * 100) : 0
 
-              {/* Groceries - Decreasing trend */}
-              <div className="bg-gradient-to-br from-emerald-50 to-emerald-100/50 rounded-xl p-4 border border-emerald-200/50">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-emerald-500 rounded-lg flex items-center justify-center shadow-sm">
-                      <ShoppingBagIcon className="w-5 h-5 text-white" />
+                return (
+                  <div key={cat.name} className={`bg-gradient-to-br ${colorStyle.bg} rounded-xl p-4 border ${colorStyle.border}`}>
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 ${colorStyle.icon} rounded-lg flex items-center justify-center shadow-sm`}>
+                          <span className="text-white text-lg">{cat.icon}</span>
+                        </div>
+                        <div>
+                          <h3 className="font-semibold text-gray-900">{cat.name}</h3>
+                          <p className={`text-xs ${colorStyle.text} font-medium`}>{percentage}% of spending</p>
+                        </div>
+                      </div>
+                      <span className="text-gray-600 text-sm font-medium">
+                        {cat.count} txns
+                      </span>
                     </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-900">Groceries</h3>
-                      <p className="text-xs text-emerald-600 font-medium">18% of spending</p>
+                    <div className="flex items-end justify-between">
+                      <div>
+                        <p className="text-sm text-gray-500">Total spent</p>
+                        <p className="text-xl font-bold text-gray-900">{formatCompact(cat.total)} FCFA</p>
+                      </div>
                     </div>
-                  </div>
-                  <span className="text-green-600 text-sm font-medium flex items-center gap-1">
-                    <ArrowTrendingDownIcon className="w-3 h-3" />
-                    -5.2%
-                  </span>
-                </div>
-                <div className="flex items-end justify-between">
-                  <div>
-                    <p className="text-sm text-gray-500">Monthly average</p>
-                    <p className="text-xl font-bold text-gray-900">185,000 FCFA</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-gray-500">saved this month</p>
-                    <p className="text-sm font-medium text-green-600">+9,750 FCFA</p>
-                  </div>
-                </div>
-                <div className="mt-3">
-                  <div className="h-2 bg-emerald-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-emerald-600 rounded-full" style={{ width: '18%' }} />
-                  </div>
-                </div>
-              </div>
-
-              {/* Transportation - Needs attention */}
-              <div className="bg-gradient-to-br from-amber-50 to-amber-100/50 rounded-xl p-4 border border-amber-200/50">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-amber-500 rounded-lg flex items-center justify-center shadow-sm">
-                      <TruckIcon className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-900">Transportation</h3>
-                      <p className="text-xs text-amber-600 font-medium">12% of spending</p>
+                    {/* Simple progress bar */}
+                    <div className="mt-3">
+                      <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                        <div className={`h-full ${colorStyle.icon} rounded-full`} style={{ width: `${percentage}%` }} />
+                      </div>
                     </div>
                   </div>
-                  <span className="text-red-600 text-sm font-medium flex items-center gap-1">
-                    <ArrowTrendingUpIcon className="w-3 h-3" />
-                    +8.1%
-                  </span>
-                </div>
-                <div className="flex items-end justify-between">
-                  <div>
-                    <p className="text-sm text-gray-500">Monthly average</p>
-                    <p className="text-xl font-bold text-gray-900">125,000 FCFA</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-gray-500">over budget</p>
-                    <p className="text-sm font-medium text-amber-600">+15,000 FCFA</p>
-                  </div>
-                </div>
-                <div className="mt-3">
-                  <div className="h-2 bg-amber-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-amber-600 rounded-full" style={{ width: '12%' }} />
-                  </div>
-                </div>
-              </div>
-
-              {/* Entertainment - Rising trend */}
-              <div className="bg-gradient-to-br from-purple-50 to-purple-100/50 rounded-xl p-4 border border-purple-200/50">
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-purple-500 rounded-lg flex items-center justify-center shadow-sm">
-                      <FilmIcon className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-900">Entertainment</h3>
-                      <p className="text-xs text-purple-600 font-medium">9% of spending</p>
-                    </div>
-                  </div>
-                  <span className="text-red-600 text-sm font-medium flex items-center gap-1">
-                    <ArrowTrendingUpIcon className="w-3 h-3" />
-                    +12.4%
-                  </span>
-                </div>
-                <div className="flex items-end justify-between">
-                  <div>
-                    <p className="text-sm text-gray-500">Monthly average</p>
-                    <p className="text-xl font-bold text-gray-900">95,000 FCFA</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-gray-500">vs last month</p>
-                    <p className="text-sm font-medium text-purple-600">+10,500 FCFA</p>
-                  </div>
-                </div>
-                <div className="mt-3">
-                  <div className="h-2 bg-purple-200 rounded-full overflow-hidden">
-                    <div className="h-full bg-purple-600 rounded-full" style={{ width: '9%' }} />
-                  </div>
-                </div>
-              </div>
+                )
+              })}
             </div>
 
             {/* Quick comparison table */}
-            <div className="border-t border-gray-100 bg-gray-50/50 p-4">
-              <h3 className="text-sm font-medium text-gray-700 mb-3">Quick comparison</h3>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
-                <div className="text-center p-2 bg-white rounded-lg">
-                  <p className="text-gray-500">Housing</p>
-                  <p className="font-bold text-gray-900">350k</p>
-                  <p className="text-red-600">↑2.3%</p>
-                </div>
-                <div className="text-center p-2 bg-white rounded-lg">
-                  <p className="text-gray-500">Groceries</p>
-                  <p className="font-bold text-gray-900">185k</p>
-                  <p className="text-green-600">↓5.2%</p>
-                </div>
-                <div className="text-center p-2 bg-white rounded-lg">
-                  <p className="text-gray-500">Transport</p>
-                  <p className="font-bold text-gray-900">125k</p>
-                  <p className="text-red-600">↑8.1%</p>
-                </div>
-                <div className="text-center p-2 bg-white rounded-lg">
-                  <p className="text-gray-500">Entertain</p>
-                  <p className="font-bold text-gray-900">95k</p>
-                  <p className="text-red-600">↑12%</p>
-                </div>
-                <div className="text-center p-2 bg-white rounded-lg">
-                  <p className="text-gray-500">Utilities</p>
-                  <p className="font-bold text-gray-900">85k</p>
-                  <p className="text-green-600">↓3.2%</p>
+            {categoryStats.length > 0 && (
+              <div className="border-t border-gray-100 bg-gray-50/50 p-4">
+                <h3 className="text-sm font-medium text-gray-700 mb-3">Quick comparison</h3>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs">
+                  {categoryStats.slice(0, 5).map((cat) => (
+                    <div key={cat.name} className="text-center p-2 bg-white rounded-lg">
+                      <p className="text-gray-500">{cat.name}</p>
+                      <p className="font-bold text-gray-900">{formatCompact(cat.total)}</p>
+                      <p className="text-gray-600">{Math.round((cat.total / totalExpenses) * 100)}%</p>
+                    </div>
+                  ))}
                 </div>
               </div>
-            </div>
+            )}
           </div>
 
-          {/* Simple Spending Pattern Card */}
+          {/* Simple Spending Pattern Card - Static for now, could be enhanced with time-based data */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">When you spend most</h2>
             <div className="space-y-4">
@@ -395,7 +399,7 @@ export default function Analytics() {
                   <span className="text-sm text-gray-600">Morning (6am-12pm)</span>
                 </div>
                 <div className="flex items-center gap-4">
-                  <span className="text-sm font-semibold text-gray-900">85,000 FCFA</span>
+                  <span className="text-sm font-semibold text-gray-900">{formatXAF(totalExpenses * 0.22)}</span>
                   <span className="text-xs text-gray-500 w-12 text-right">22%</span>
                 </div>
               </div>
@@ -409,7 +413,7 @@ export default function Analytics() {
                   <span className="text-sm text-gray-600">Afternoon (12pm-6pm)</span>
                 </div>
                 <div className="flex items-center gap-4">
-                  <span className="text-sm font-semibold text-gray-900">124,000 FCFA</span>
+                  <span className="text-sm font-semibold text-gray-900">{formatXAF(totalExpenses * 0.32)}</span>
                   <span className="text-xs text-gray-500 w-12 text-right">32%</span>
                 </div>
               </div>
@@ -423,7 +427,7 @@ export default function Analytics() {
                   <span className="text-sm text-gray-600">Evening (6pm-12am)</span>
                 </div>
                 <div className="flex items-center gap-4">
-                  <span className="text-sm font-semibold text-gray-900">178,000 FCFA</span>
+                  <span className="text-sm font-semibold text-gray-900">{formatXAF(totalExpenses * 0.46)}</span>
                   <span className="text-xs text-gray-500 w-12 text-right">46%</span>
                 </div>
               </div>
@@ -441,65 +445,64 @@ export default function Analytics() {
           </div>
         </div>
 
-        {/* Right Column - AI Insights & Recommendations */}
+        {/* Right Column - Insights & Recommendations */}
         <div className="space-y-6">
           {/* AI Insights Card */}
           <div className="bg-gradient-to-br from-indigo-600 to-purple-600 rounded-2xl shadow-lg overflow-hidden">
             <div className="p-6 text-white">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold">AI Insights</h2>
+                <h2 className="text-lg font-semibold">Smart Insights</h2>
                 <span className="px-3 py-1 bg-white/20 rounded-full text-xs font-medium">
-                  Live
+                  {insights.length} new
                 </span>
               </div>
 
               <div className="space-y-4">
-                {insights.map((insight, idx) => (
-                  <div
-                    key={idx}
-                    className="bg-white/10 backdrop-blur-sm rounded-xl p-4 hover:bg-white/20 transition-colors cursor-pointer"
-                  >
-                    <div className="flex items-start gap-3">
-                      <span className="text-2xl">{insight.icon}</span>
-                      <div className="flex-1">
-                        <h3 className="font-semibold mb-1">{insight.title}</h3>
-                        <p className="text-sm text-white/80 mb-2">{insight.message}</p>
-                        <p className="text-sm font-medium text-white/90 mb-3">{insight.impact}</p>
-                        <button className="text-sm bg-white/20 px-3 py-1.5 rounded-lg hover:bg-white/30 transition-colors">
-                          {insight.action}
-                        </button>
+                {insights.length > 0 ? (
+                  insights.map((insight, idx) => (
+                    <div
+                      key={idx}
+                      className="bg-white/10 backdrop-blur-sm rounded-xl p-4 hover:bg-white/20 transition-colors cursor-pointer"
+                    >
+                      <div className="flex items-start gap-3">
+                        <span className="text-2xl">{insight.icon}</span>
+                        <div className="flex-1">
+                          <h3 className="font-semibold mb-1">{insight.title}</h3>
+                          <p className="text-sm text-white/80 mb-2">{insight.message}</p>
+                          <p className="text-sm font-medium text-white/90 mb-3">{insight.impact}</p>
+                          <button className="text-sm bg-white/20 px-3 py-1.5 rounded-lg hover:bg-white/30 transition-colors">
+                            {insight.action}
+                          </button>
+                        </div>
                       </div>
                     </div>
+                  ))
+                ) : (
+                  <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 text-center">
+                    <p className="text-white/80">Add more transactions to get insights</p>
                   </div>
-                ))}
+                )}
               </div>
             </div>
           </div>
 
           {/* Budget Recommendations */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Budget Recommendations</h2>
-            <div className="space-y-4">
-              <RecommendationCard
-                category="Entertainment"
-                current={95000}
-                recommended={80000}
-                color="purple"
-              />
-              <RecommendationCard
-                category="Groceries"
-                current={185000}
-                recommended={170000}
-                color="green"
-              />
-              <RecommendationCard
-                category="Transportation"
-                current={125000}
-                recommended={100000}
-                color="amber"
-              />
+          {categoryStats.length > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">Budget Recommendations</h2>
+              <div className="space-y-4">
+                {getBudgetRecommendations().map((rec) => (
+                  <RecommendationCard
+                    key={rec.category}
+                    category={rec.category}
+                    current={rec.current}
+                    recommended={rec.recommended}
+                    color={rec.color}
+                  />
+                ))}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Quick Stats */}
           <div className="grid grid-cols-2 gap-4">
@@ -510,7 +513,7 @@ export default function Analytics() {
             </div>
             <div className="bg-gray-50 rounded-xl p-4">
               <p className="text-sm text-gray-600 mb-1">Avg Transaction</p>
-              <p className="text-lg font-bold text-gray-900">{formatXAF(12500)}</p>
+              <p className="text-lg font-bold text-gray-900">{formatXAF(avgTransaction)}</p>
               <p className="text-xs text-gray-500 mt-1">Across all categories</p>
             </div>
           </div>
@@ -518,51 +521,66 @@ export default function Analytics() {
       </div>
 
       {/* Monthly Comparison Table */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-gray-100">
-          <h2 className="text-lg font-semibold text-gray-900">Monthly Performance</h2>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">Month</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">Income</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">Expenses</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">Savings</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">Efficiency</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {monthlyData.map((month) => (
-                <tr key={month.month} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-6 py-4 font-medium text-gray-900">{month.month}</td>
-                  <td className="px-6 py-4 text-green-600 font-medium">{formatXAF(month.income)}</td>
-                  <td className="px-6 py-4 text-red-600 font-medium">{formatXAF(month.expenses)}</td>
-                  <td className="px-6 py-4 font-medium text-gray-900">{formatXAF(month.savings)}</td>
-                  <td className="px-6 py-4">
-                    <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-medium">
-                      {Math.round((month.savings / month.income) * 100)}%
-                    </span>
-                  </td>
-                  <td className="px-6 py-4">
-                    <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                      <EllipsisHorizontalIcon className="w-5 h-5 text-gray-500" />
-                    </button>
-                  </td>
+      {monthlyData.length > 0 && (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="p-6 border-b border-gray-100">
+            <h2 className="text-lg font-semibold text-gray-900">Monthly Performance</h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">Month</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">Income</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">Expenses</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">Savings</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">Efficiency</th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-gray-600">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {monthlyData.map((month, idx) => (
+                  <tr key={idx} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4 font-medium text-gray-900">{month.month}</td>
+                    <td className="px-6 py-4 text-green-600 font-medium">{formatXAF(month.income)}</td>
+                    <td className="px-6 py-4 text-red-600 font-medium">{formatXAF(month.expenses)}</td>
+                    <td className="px-6 py-4 font-medium text-gray-900">{formatXAF(month.savings)}</td>
+                    <td className="px-6 py-4">
+                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${month.income > 0
+                          ? month.savings / month.income > 0.3
+                            ? 'bg-green-100 text-green-700'
+                            : month.savings / month.income > 0.1
+                              ? 'bg-yellow-100 text-yellow-700'
+                              : 'bg-red-100 text-red-700'
+                          : 'bg-gray-100 text-gray-700'
+                        }`}>
+                        {month.income > 0 ? Math.round((month.savings / month.income) * 100) : 0}%
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                        <EllipsisHorizontalIcon className="w-5 h-5 text-gray-500" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }
 
 // Metric Card Component
 function MetricCard({ title, value, change, trend, subtitle, icon: Icon, gradient, isCategory }) {
+  const getTrendColor = () => {
+    if (trend === 'up') return 'bg-green-100 text-green-700'
+    if (trend === 'down') return 'bg-red-100 text-red-700'
+    return 'bg-gray-100 text-gray-700'
+  }
+
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 hover:shadow-lg transition-all duration-300 group">
       <div className="flex items-start justify-between mb-4">
@@ -570,8 +588,7 @@ function MetricCard({ title, value, change, trend, subtitle, icon: Icon, gradien
           <Icon className="w-6 h-6 text-white" />
         </div>
         {!isCategory && change && (
-          <span className={`text-sm font-medium px-2 py-1 rounded-lg ${trend === 'up' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-            }`}>
+          <span className={`text-sm font-medium px-2 py-1 rounded-lg ${getTrendColor()}`}>
             {change}
           </span>
         )}
@@ -588,7 +605,10 @@ function RecommendationCard({ category, current, recommended, color }) {
   const colors = {
     purple: 'from-purple-500 to-purple-600',
     green: 'from-green-500 to-emerald-600',
-    amber: 'from-amber-500 to-orange-600'
+    amber: 'from-amber-500 to-orange-600',
+    blue: 'from-blue-500 to-indigo-600',
+    red: 'from-red-500 to-pink-600',
+    gray: 'from-gray-500 to-gray-600'
   }
 
   const formatXAF = (amount) => {
@@ -612,7 +632,7 @@ function RecommendationCard({ category, current, recommended, color }) {
       </div>
       <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
         <div
-          className={`h-full bg-gradient-to-r ${colors[color]} rounded-full`}
+          className={`h-full bg-gradient-to-r ${colors[color] || colors.gray} rounded-full`}
           style={{ width: `${(recommended / current) * 100}%` }}
         />
       </div>

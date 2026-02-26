@@ -1,7 +1,7 @@
 // app/transactions/page.js
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
     MagnifyingGlassIcon,
     FunnelIcon,
@@ -10,58 +10,79 @@ import {
     PencilIcon,
     TrashIcon,
     XMarkIcon,
-    CheckIcon,
     ArrowUpIcon,
     ArrowDownIcon,
     BanknotesIcon,
-    CreditCardIcon
+    CreditCardIcon,
+    ExclamationTriangleIcon
 } from '@heroicons/react/24/outline'
+import { useTransactions } from '@/hooks/useTransactions'
+import { useCategories } from '@/hooks/useCategories'
 
 export default function Transactions() {
     const [view, setView] = useState('all')
     const [searchTerm, setSearchTerm] = useState('')
     const [showAddForm, setShowAddForm] = useState(false)
-    const [editingId, setEditingId] = useState(null)
+    const [editingTransaction, setEditingTransaction] = useState(null)
     const [showDeleteModal, setShowDeleteModal] = useState(false)
     const [deletingId, setDeletingId] = useState(null)
+    const [selectedMonth, setSelectedMonth] = useState(() => {
+        const now = new Date()
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    })
+    const [showCategoryWarning, setShowCategoryWarning] = useState(false)
 
-    const [transactions, setTransactions] = useState([
-        { id: 1, description: "Whole Foods Market", amount: 156.32, category: "Groceries", date: "2024-02-15", type: "expense", merchant: "Whole Foods", notes: "Weekly groceries" },
-        { id: 2, description: "Salary Deposit", amount: 4200.00, category: "Income", date: "2024-02-14", type: "income", merchant: "Acme Inc", notes: "February salary" },
-        { id: 3, description: "Netflix", amount: 15.99, category: "Entertainment", date: "2024-02-13", type: "expense", merchant: "Netflix", notes: "Monthly subscription" },
-        { id: 4, description: "Uber", amount: 24.50, category: "Transportation", date: "2024-02-12", type: "expense", merchant: "Uber", notes: "Airport ride" },
-        { id: 5, description: "Starbucks", amount: 5.75, category: "Dining", date: "2024-02-12", type: "expense", merchant: "Starbucks", notes: "Morning coffee" },
-        { id: 6, description: "Rent Payment", amount: 1800.00, category: "Housing", date: "2024-02-01", type: "expense", merchant: "Landlord", notes: "February rent" },
-    ])
+    const {
+        transactions = [],
+        loading,
+        summary,
+        addTransaction,
+        updateTransaction,
+        deleteTransaction,
+        refresh: refreshTransactions
+    } = useTransactions()
+
+    const {
+        categories = [],
+        loading: catLoading,
+        error: catError,
+        getCategoriesByType
+    } = useCategories()
+
+    // Show warning if using default categories
+    useEffect(() => {
+        if (catError) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setShowCategoryWarning(true)
+            const timer = setTimeout(() => setShowCategoryWarning(false), 5000)
+            return () => clearTimeout(timer)
+        }
+    }, [catError])
+
+    // Calculate stats from real data
+    const totalIncome = Array.isArray(transactions)
+        ? transactions.filter(t => t?.type === 'income').reduce((sum, t) => sum + (Number(t.amount) || 0), 0)
+        : 0
+
+    const totalExpenses = Array.isArray(transactions)
+        ? transactions.filter(t => t?.type === 'expense').reduce((sum, t) => sum + (Number(t.amount) || 0), 0)
+        : 0
+
+    const balance = totalIncome - totalExpenses
+    const transactionCount = Array.isArray(transactions) ? transactions.length : 0
 
     const [newTransaction, setNewTransaction] = useState({
         description: '',
         amount: '',
         category: '',
-        date: '',
+        date: new Date().toISOString().split('T')[0],
         type: 'expense',
         merchant: '',
         notes: ''
     })
 
-    const categories = [
-        'Income', 'Groceries', 'Dining', 'Transportation', 'Entertainment',
-        'Housing', 'Utilities', 'Shopping', 'Healthcare', 'Education', 'Other'
-    ]
-
-    // Calculate stats
-    const totalIncome = transactions
-        .filter(t => t.type === 'income')
-        .reduce((sum, t) => sum + t.amount, 0)
-
-    const totalExpenses = transactions
-        .filter(t => t.type === 'expense')
-        .reduce((sum, t) => sum + t.amount, 0)
-
-    const balance = totalIncome - totalExpenses
-    const transactionCount = transactions.length
-
     const formatXAF = (amount) => {
+        if (!amount && amount !== 0) return '0 FCFA'
         return new Intl.NumberFormat('en-US', {
             style: 'currency',
             currency: 'XAF',
@@ -70,48 +91,53 @@ export default function Transactions() {
         }).format(amount).replace('XAF', 'FCFA')
     }
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault()
-        if (editingId) {
-            // Update existing transaction
-            setTransactions(transactions.map(t =>
-                t.id === editingId ? { ...newTransaction, id: editingId, amount: parseFloat(newTransaction.amount) } : t
-            ))
-            setEditingId(null)
-        } else {
-            // Add new transaction
-            const transaction = {
-                id: transactions.length + 1,
-                ...newTransaction,
-                amount: parseFloat(newTransaction.amount)
-            }
-            setTransactions([transaction, ...transactions])
+
+        // Prepare data for API
+        const submitData = {
+            ...newTransaction,
+            amount: parseFloat(newTransaction.amount),
+            category: newTransaction.category ? parseInt(newTransaction.category) : null
         }
 
-        // Reset form
-        setNewTransaction({
-            description: '',
-            amount: '',
-            category: '',
-            date: '',
-            type: 'expense',
-            merchant: '',
-            notes: ''
-        })
-        setShowAddForm(false)
+        let result
+        if (editingTransaction) {
+            result = await updateTransaction(editingTransaction.id, submitData)
+        } else {
+            result = await addTransaction(submitData)
+        }
+
+        if (result?.success) {
+            // Reset form
+            setNewTransaction({
+                description: '',
+                amount: '',
+                category: '',
+                date: new Date().toISOString().split('T')[0],
+                type: 'expense',
+                merchant: '',
+                notes: ''
+            })
+            setEditingTransaction(null)
+            setShowAddForm(false)
+            await refreshTransactions()
+        } else {
+            alert('Error: ' + JSON.stringify(result?.error))
+        }
     }
 
     const handleEdit = (transaction) => {
+        setEditingTransaction(transaction)
         setNewTransaction({
-            description: transaction.description,
-            amount: transaction.amount.toString(),
-            category: transaction.category,
-            date: transaction.date,
-            type: transaction.type,
+            description: transaction.description || '',
+            amount: transaction.amount?.toString() || '',
+            category: transaction.category?.toString() || '',
+            date: transaction.date || new Date().toISOString().split('T')[0],
+            type: transaction.type || 'expense',
             merchant: transaction.merchant || '',
             notes: transaction.notes || ''
         })
-        setEditingId(transaction.id)
         setShowAddForm(true)
     }
 
@@ -120,22 +146,72 @@ export default function Transactions() {
         setShowDeleteModal(true)
     }
 
-    const confirmDelete = () => {
-        setTransactions(transactions.filter(t => t.id !== deletingId))
-        setShowDeleteModal(false)
-        setDeletingId(null)
+    const confirmDelete = async () => {
+        const result = await deleteTransaction(deletingId)
+        if (result?.success) {
+            setShowDeleteModal(false)
+            setDeletingId(null)
+            await refreshTransactions()
+        } else {
+            alert('Error: ' + JSON.stringify(result?.error))
+        }
     }
 
     // Filter transactions
-    const filteredTransactions = transactions.filter(t => {
-        const matchesSearch = t.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            t.category.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (t.merchant && t.merchant.toLowerCase().includes(searchTerm.toLowerCase()))
+    const filteredTransactions = Array.isArray(transactions)
+        ? transactions.filter(t => {
+            if (!t) return false
+            const matchesSearch = (t.description?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+                (t.category_details?.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+                (t.merchant?.toLowerCase() || '').includes(searchTerm.toLowerCase())
 
-        const matchesView = view === 'all' || t.type === view
+            const matchesView = view === 'all' || t.type === view
 
-        return matchesSearch && matchesView
-    })
+            // Filter by month if selected
+            let matchesMonth = true
+            if (selectedMonth && t.date) {
+                const transactionMonth = t.date.substring(0, 7)
+                matchesMonth = transactionMonth === selectedMonth
+            }
+
+            return matchesSearch && matchesView && matchesMonth
+        })
+        : []
+
+    const getCategoryOptions = () => {
+        const type = editingTransaction?.type || newTransaction.type || 'expense'
+        return getCategoriesByType ? getCategoriesByType(type) : []
+    }
+
+    // Reset form when type changes
+    useEffect(() => {
+        if (!editingTransaction) {
+            // eslint-disable-next-line react-hooks/set-state-in-effect
+            setNewTransaction(prev => ({
+                ...prev,
+                category: ''
+            }))
+        }
+    }, [newTransaction.type, editingTransaction])
+
+    if (loading || catLoading) {
+        return (
+            <div className="space-y-6 pb-24 lg:pb-6">
+                <div className="h-8 bg-gray-200 rounded w-48 animate-pulse" />
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    {[...Array(4)].map((_, i) => (
+                        <div key={i} className="h-24 bg-gray-100 rounded-xl animate-pulse" />
+                    ))}
+                </div>
+                <div className="h-24 bg-gray-100 rounded-xl animate-pulse" />
+                <div className="space-y-3">
+                    {[...Array(3)].map((_, i) => (
+                        <div key={i} className="h-32 bg-gray-100 rounded-xl animate-pulse" />
+                    ))}
+                </div>
+            </div>
+        )
+    }
 
     return (
         <div className="space-y-6 pb-24 lg:pb-6">
@@ -147,17 +223,17 @@ export default function Transactions() {
                 </div>
                 <button
                     onClick={() => {
-                        setEditingId(null)
+                        setEditingTransaction(null)
                         setNewTransaction({
                             description: '',
                             amount: '',
                             category: '',
-                            date: '',
+                            date: new Date().toISOString().split('T')[0],
                             type: 'expense',
                             merchant: '',
                             notes: ''
                         })
-                        setShowAddForm(!showAddForm)
+                        setShowAddForm(true)
                     }}
                     className="inline-flex items-center justify-center px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-xl font-semibold hover:from-blue-700 hover:to-blue-600 transition-all duration-200 shadow-lg shadow-blue-500/25"
                 >
@@ -166,7 +242,17 @@ export default function Transactions() {
                 </button>
             </div>
 
-            {/* Quick Stats - Mobile First Design */}
+            {/* Category Warning */}
+            {showCategoryWarning && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 flex items-center gap-3">
+                    <ExclamationTriangleIcon className="w-5 h-5 text-yellow-600 flex-shrink-0" />
+                    <p className="text-sm text-yellow-700">
+                        Using default categories. Connect to server to create custom categories.
+                    </p>
+                </div>
+            )}
+
+            {/* Quick Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {/* Income Card */}
                 <div className="bg-gradient-to-br from-green-50 to-green-100/50 p-4 rounded-xl border border-green-200">
@@ -175,7 +261,9 @@ export default function Transactions() {
                         <ArrowUpIcon className="w-4 h-4 text-green-600" />
                     </div>
                     <p className="text-lg font-bold text-gray-900">{formatXAF(totalIncome)}</p>
-                    <p className="text-xs text-gray-500 mt-1">+12.5% vs last month</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                        {summary?.income_change ? `${summary.income_change > 0 ? '+' : ''}${summary.income_change}% vs last month` : ''}
+                    </p>
                 </div>
 
                 {/* Expenses Card */}
@@ -185,10 +273,12 @@ export default function Transactions() {
                         <ArrowDownIcon className="w-4 h-4 text-red-600" />
                     </div>
                     <p className="text-lg font-bold text-gray-900">{formatXAF(totalExpenses)}</p>
-                    <p className="text-xs text-gray-500 mt-1">-3.2% vs last month</p>
+                    <p className="text-xs text-gray-500 mt-1">
+                        {summary?.expense_change ? `${summary.expense_change > 0 ? '+' : ''}${summary.expense_change}% vs last month` : ''}
+                    </p>
                 </div>
 
-                {/* Balance Card - Spans full width on mobile */}
+                {/* Balance Card */}
                 <div className="col-span-2 lg:col-span-1 bg-gradient-to-br from-blue-50 to-indigo-100/50 p-4 rounded-xl border border-blue-200">
                     <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-medium text-blue-600 uppercase tracking-wider">Net Balance</span>
@@ -198,7 +288,7 @@ export default function Transactions() {
                     <p className="text-xs text-gray-500 mt-1">Across {transactionCount} transactions</p>
                 </div>
 
-                {/* Total Transactions - Hidden on mobile, shown on desktop */}
+                {/* Total Transactions */}
                 <div className="hidden lg:block bg-gray-50 p-4 rounded-xl border border-gray-200">
                     <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-medium text-gray-600 uppercase tracking-wider">Transactions</span>
@@ -215,7 +305,7 @@ export default function Transactions() {
                     <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                         <div className="p-6 border-b border-gray-100 sticky top-0 bg-white">
                             <div className="flex items-center justify-between">
-                                <h2 className="text-xl font-semibold">{editingId ? 'Edit Transaction' : 'New Transaction'}</h2>
+                                <h2 className="text-xl font-semibold">{editingTransaction ? 'Edit Transaction' : 'New Transaction'}</h2>
                                 <button onClick={() => setShowAddForm(false)} className="p-2 hover:bg-gray-100 rounded-lg">
                                     <XMarkIcon className="w-5 h-5" />
                                 </button>
@@ -227,20 +317,20 @@ export default function Transactions() {
                             <div className="grid grid-cols-2 gap-3">
                                 <button
                                     type="button"
-                                    onClick={() => setNewTransaction({ ...newTransaction, type: 'expense' })}
+                                    onClick={() => setNewTransaction({ ...newTransaction, type: 'expense', category: '' })}
                                     className={`p-3 rounded-xl border-2 transition-all ${newTransaction.type === 'expense'
                                             ? 'border-red-500 bg-red-50 text-red-700'
-                                            : 'border-gray-200 text-gray-600'
+                                            : 'border-gray-200 text-gray-600 hover:bg-gray-50'
                                         }`}
                                 >
                                     💳 Expense
                                 </button>
                                 <button
                                     type="button"
-                                    onClick={() => setNewTransaction({ ...newTransaction, type: 'income' })}
+                                    onClick={() => setNewTransaction({ ...newTransaction, type: 'income', category: '' })}
                                     className={`p-3 rounded-xl border-2 transition-all ${newTransaction.type === 'income'
                                             ? 'border-green-500 bg-green-50 text-green-700'
-                                            : 'border-gray-200 text-gray-600'
+                                            : 'border-gray-200 text-gray-600 hover:bg-gray-50'
                                         }`}
                                 >
                                     💰 Income
@@ -269,7 +359,7 @@ export default function Transactions() {
                                     onChange={(e) => setNewTransaction({ ...newTransaction, amount: e.target.value })}
                                     className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
                                     placeholder="0"
-                                    step="0.01"
+                                    step="1"
                                     min="0"
                                     required
                                 />
@@ -285,8 +375,10 @@ export default function Transactions() {
                                     required
                                 >
                                     <option value="">Select a category</option>
-                                    {categories.map(cat => (
-                                        <option key={cat} value={cat}>{cat}</option>
+                                    {getCategoryOptions().map(cat => (
+                                        <option key={cat.id} value={cat.id}>
+                                            {cat.icon} {cat.name}
+                                        </option>
                                     ))}
                                 </select>
                             </div>
@@ -332,7 +424,7 @@ export default function Transactions() {
                                 type="submit"
                                 className="w-full p-3 bg-gradient-to-r from-blue-600 to-blue-500 text-white rounded-xl font-semibold hover:from-blue-700 hover:to-blue-600 transition-all"
                             >
-                                {editingId ? 'Update Transaction' : 'Add Transaction'}
+                                {editingTransaction ? 'Update Transaction' : 'Add Transaction'}
                             </button>
                         </form>
                     </div>
@@ -381,10 +473,15 @@ export default function Transactions() {
                     </div>
 
                     <div className="flex gap-2">
-                        <button className="flex-1 sm:flex-none px-4 py-3 border border-gray-200 rounded-xl hover:bg-gray-50 flex items-center justify-center gap-2">
-                            <CalendarIcon className="w-5 h-5 text-gray-600" />
-                            <span className="text-sm">Feb 2024</span>
-                        </button>
+                        <div className="relative">
+                            <input
+                                type="month"
+                                value={selectedMonth}
+                                onChange={(e) => setSelectedMonth(e.target.value)}
+                                className="pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                            />
+                            <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                        </div>
                         <button className="px-4 py-3 border border-gray-200 rounded-xl hover:bg-gray-50">
                             <FunnelIcon className="w-5 h-5 text-gray-600" />
                         </button>
@@ -393,11 +490,11 @@ export default function Transactions() {
 
                 {/* Filter Chips */}
                 <div className="flex flex-wrap gap-2 mt-4">
-                    {['All', 'Income', 'Expenses'].map((tab) => (
+                    {['all', 'income', 'expense'].map((tab) => (
                         <button
                             key={tab}
-                            onClick={() => setView(tab.toLowerCase())}
-                            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${view === tab.toLowerCase()
+                            onClick={() => setView(tab)}
+                            className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition-colors ${view === tab
                                     ? 'bg-blue-600 text-white'
                                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                                 }`}
@@ -409,97 +506,131 @@ export default function Transactions() {
 
                 {/* Results count */}
                 <p className="text-xs text-gray-500 mt-3">
-                    Showing {filteredTransactions.length} of {transactions.length} transactions
+                    Showing {filteredTransactions.length} of {transactionCount} transactions
                 </p>
             </div>
 
             {/* Transactions List */}
             <div className="space-y-3">
                 {filteredTransactions.length === 0 ? (
-                    <div className="bg-white rounded-xl border border-gray-100 p-8 text-center">
+                    <div className="bg-white rounded-xl border border-gray-100 p-12 text-center">
                         <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                             <CreditCardIcon className="w-10 h-10 text-gray-400" />
                         </div>
                         <h3 className="text-lg font-semibold text-gray-900 mb-1">No transactions found</h3>
-                        <p className="text-gray-500 text-sm mb-4">Try adjusting your search or filter</p>
-                        <button
-                            onClick={() => {
-                                setSearchTerm('')
-                                setView('all')
-                            }}
-                            className="text-blue-600 font-medium"
-                        >
-                            Clear filters
-                        </button>
+                        <p className="text-gray-500 text-sm mb-4">
+                            {searchTerm || view !== 'all' || selectedMonth
+                                ? 'Try adjusting your filters'
+                                : 'Get started by adding your first transaction'}
+                        </p>
+                        {(searchTerm || view !== 'all' || selectedMonth) ? (
+                            <button
+                                onClick={() => {
+                                    setSearchTerm('')
+                                    setView('all')
+                                    setSelectedMonth(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`)
+                                }}
+                                className="text-blue-600 font-medium hover:underline"
+                            >
+                                Clear all filters
+                            </button>
+                        ) : (
+                            <button
+                                onClick={() => {
+                                    setEditingTransaction(null)
+                                    setNewTransaction({
+                                        description: '',
+                                        amount: '',
+                                        category: '',
+                                        date: new Date().toISOString().split('T')[0],
+                                        type: 'expense',
+                                        merchant: '',
+                                        notes: ''
+                                    })
+                                    setShowAddForm(true)
+                                }}
+                                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                            >
+                                <PlusIcon className="w-4 h-4" />
+                                Add Transaction
+                            </button>
+                        )}
                     </div>
                 ) : (
-                    filteredTransactions.map((transaction) => (
-                        <div
-                            key={transaction.id}
-                            className="bg-white rounded-xl border border-gray-100 p-4 hover:shadow-md transition-shadow"
-                        >
-                            <div className="flex items-start justify-between">
-                                <div className="flex items-start gap-3">
-                                    <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl flex-shrink-0 ${transaction.type === 'income' ? 'bg-green-100' : 'bg-red-100'
-                                        }`}>
-                                        {transaction.type === 'income' ? '💰' : '💳'}
+                    filteredTransactions.map((transaction) => {
+                        const category = categories.find(c => c.id === transaction.category) || transaction.category_details
+                        return (
+                            <div
+                                key={transaction.id}
+                                className="bg-white rounded-xl border border-gray-100 p-4 hover:shadow-md transition-shadow"
+                            >
+                                <div className="flex items-start justify-between">
+                                    <div className="flex items-start gap-3">
+                                        <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl flex-shrink-0 ${transaction.type === 'income' ? 'bg-green-100' : 'bg-red-100'
+                                            }`}>
+                                            {category?.icon || (transaction.type === 'income' ? '💰' : '💳')}
+                                        </div>
+
+                                        <div>
+                                            <h3 className="font-semibold text-gray-900">{transaction.description}</h3>
+                                            {transaction.merchant && (
+                                                <p className="text-sm text-gray-500">{transaction.merchant}</p>
+                                            )}
+                                            <div className="flex flex-wrap items-center gap-2 mt-2">
+                                                <span
+                                                    className={`text-xs px-2 py-1 rounded-full ${transaction.type === 'income'
+                                                            ? 'bg-green-100 text-green-700'
+                                                            : 'bg-blue-100 text-blue-700'
+                                                        }`}
+                                                >
+                                                    {category?.name || transaction.category}
+                                                </span>
+                                                <span className="text-xs text-gray-500">
+                                                    {new Date(transaction.date).toLocaleDateString('en-US', {
+                                                        month: 'short',
+                                                        day: 'numeric',
+                                                        year: 'numeric'
+                                                    })}
+                                                </span>
+                                            </div>
+                                        </div>
                                     </div>
 
-                                    <div>
-                                        <h3 className="font-semibold text-gray-900">{transaction.description}</h3>
-                                        {transaction.merchant && (
-                                            <p className="text-sm text-gray-500">{transaction.merchant}</p>
-                                        )}
-                                        <div className="flex flex-wrap items-center gap-2 mt-2">
-                                            <span className={`text-xs px-2 py-1 rounded-full ${transaction.type === 'income'
-                                                    ? 'bg-green-100 text-green-700'
-                                                    : 'bg-blue-100 text-blue-700'
-                                                }`}>
-                                                {transaction.category}
-                                            </span>
-                                            <span className="text-xs text-gray-500">
-                                                {new Date(transaction.date).toLocaleDateString('en-US', {
-                                                    month: 'short',
-                                                    day: 'numeric',
-                                                    year: 'numeric'
-                                                })}
-                                            </span>
+                                    <div className="text-right flex flex-col items-end">
+                                        <p className={`font-bold ${transaction.type === 'income' ? 'text-green-600' : 'text-red-600'
+                                            }`}>
+                                            {transaction.type === 'income' ? '+' : '-'}{formatXAF(transaction.amount)}
+                                        </p>
+
+                                        <div className="flex items-center gap-1 mt-2">
+                                            <button
+                                                onClick={() => handleEdit(transaction)}
+                                                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                                                title="Edit"
+                                            >
+                                                <PencilIcon className="w-4 h-4 text-gray-500" />
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(transaction.id)}
+                                                className="p-2 hover:bg-red-50 rounded-lg transition-colors"
+                                                title="Delete"
+                                            >
+                                                <TrashIcon className="w-4 h-4 text-red-500" />
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
 
-                                <div className="text-right flex flex-col items-end">
-                                    <p className={`font-bold ${transaction.type === 'income' ? 'text-green-600' : 'text-red-600'
-                                        }`}>
-                                        {transaction.type === 'income' ? '+' : '-'}{formatXAF(transaction.amount)}
-                                    </p>
-
-                                    <div className="flex items-center gap-1 mt-2">
-                                        <button
-                                            onClick={() => handleEdit(transaction)}
-                                            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                                        >
-                                            <PencilIcon className="w-4 h-4 text-gray-500" />
-                                        </button>
-                                        <button
-                                            onClick={() => handleDelete(transaction.id)}
-                                            className="p-2 hover:bg-red-50 rounded-lg transition-colors"
-                                        >
-                                            <TrashIcon className="w-4 h-4 text-red-500" />
-                                        </button>
+                                {transaction.notes && (
+                                    <div className="mt-3 pt-3 border-t border-gray-100">
+                                        <p className="text-sm text-gray-600">
+                                            <span className="font-medium">Notes:</span> {transaction.notes}
+                                        </p>
                                     </div>
-                                </div>
+                                )}
                             </div>
-
-                            {transaction.notes && (
-                                <div className="mt-3 pt-3 border-t border-gray-100">
-                                    <p className="text-sm text-gray-600">
-                                        <span className="font-medium">Notes:</span> {transaction.notes}
-                                    </p>
-                                </div>
-                            )}
-                        </div>
-                    ))
+                        )
+                    })
                 )}
             </div>
         </div>

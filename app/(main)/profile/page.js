@@ -1,7 +1,8 @@
 // app/profile/page.js
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import {
     UserIcon,
     EnvelopeIcon,
@@ -20,40 +21,98 @@ import {
     KeyIcon,
     CreditCardIcon,
     DocumentTextIcon,
-    ChartBarIcon
+    ChartBarIcon,
+    ExclamationTriangleIcon
 } from '@heroicons/react/24/outline'
+import { useAuth } from '@/context/AuthContext'
+import { useTransactions } from '@/hooks/useTransactions'
+import { useBudgets } from '@/hooks/useBudgets'
+import api from '@/lib/axios'
 
 export default function Profile() {
+    const router = useRouter()
+    const { user, logout, updateProfile, loading: authLoading } = useAuth()
+    const { summary } = useTransactions()
+    const { budgets, summary: budgetSummary } = useBudgets()
+
     const [activeTab, setActiveTab] = useState('profile')
     const [isEditing, setIsEditing] = useState(false)
     const [showDeleteModal, setShowDeleteModal] = useState(false)
     const [darkMode, setDarkMode] = useState(false)
+    const [showPasswordModal, setShowPasswordModal] = useState(false)
+    const [passwordData, setPasswordData] = useState({
+        old_password: '',
+        new_password: '',
+        confirm_password: ''
+    })
+    const [passwordError, setPasswordError] = useState('')
+    const [passwordSuccess, setPasswordSuccess] = useState('')
+    const [isChangingPassword, setIsChangingPassword] = useState(false)
+
     const [notifications, setNotifications] = useState({
-        email: true,
-        push: true,
-        sms: false,
-        budgetAlerts: true,
-        weeklyReport: true,
+        email: user?.email_notifications ?? true,
+        push: user?.push_notifications ?? true,
+        sms: user?.sms_alerts ?? false,
+        budgetAlerts: user?.budget_alerts ?? true,
+        weeklyReport: user?.weekly_report ?? true,
         marketing: false
     })
 
-    const [user, setUser] = useState({
-        name: "Jasmine M",
-        email: "jasmien.m@example.com",
-        phone: "+237 6XX XXX XXX",
-        joinDate: "January 15, 2024",
-        totalTransactions: 156,
-        accountAge: "6 months",
-        currency: "XAF",
-        language: "English",
-        monthlyBudget: 500000,
-        savingsGoal: 2000000,
-        avatar: null
+    const [userData, setUserData] = useState({
+        first_name: user?.first_name || '',
+        last_name: user?.last_name || '',
+        email: user?.email || '',
+        phone: user?.phone_number || '',
+        joinDate: user?.date_joined ? new Date(user.date_joined).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : 'January 2024',
+        totalTransactions: user?.transaction_count || 0,
+        accountAge: user?.account_age_days ? `${Math.floor(user.account_age_days / 30)} months` : '0 months',
+        currency: user?.currency || 'XAF',
+        language: user?.language || 'en',
+        monthlyBudget: user?.monthly_budget || 0,
+        savingsGoal: user?.savings_goal || 0
     })
 
-    const [editedUser, setEditedUser] = useState({ ...user })
+    const [editedUser, setEditedUser] = useState({ ...userData })
+
+    // Update userData when user changes
+    useEffect(() => {
+        if (user) {
+            setUserData({
+                first_name: user.first_name || '',
+                last_name: user.last_name || '',
+                email: user.email || '',
+                phone: user.phone_number || '',
+                joinDate: user.date_joined ? new Date(user.date_joined).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : 'January 2024',
+                totalTransactions: user.transaction_count || 0,
+                accountAge: user.account_age_days ? `${Math.floor(user.account_age_days / 30)} months` : '0 months',
+                currency: user.currency || 'XAF',
+                language: user.language || 'en',
+                monthlyBudget: user.monthly_budget || 0,
+                savingsGoal: user.savings_goal || 0
+            })
+            setEditedUser({
+                first_name: user.first_name || '',
+                last_name: user.last_name || '',
+                email: user.email || '',
+                phone: user.phone_number || '',
+                currency: user.currency || 'XAF',
+                language: user.language || 'en',
+                monthlyBudget: user.monthly_budget || 0,
+                savingsGoal: user.savings_goal || 0
+            })
+            setNotifications({
+                email: user.email_notifications ?? true,
+                push: user.push_notifications ?? true,
+                sms: user.sms_alerts ?? false,
+                budgetAlerts: user.budget_alerts ?? true,
+                weeklyReport: user.weekly_report ?? true,
+                marketing: false
+            })
+        }
+    }, [user])
 
     const formatXAF = (amount) => {
+        if (!amount && amount !== 0) return '0 FCFA'
         return new Intl.NumberFormat('en-US', {
             style: 'currency',
             currency: 'XAF',
@@ -70,18 +129,123 @@ export default function Profile() {
         { id: 'budget', name: 'Budget', icon: ChartBarIcon }
     ]
 
-    const handleSaveProfile = () => {
-        setUser(editedUser)
-        setIsEditing(false)
+    const handleSaveProfile = async () => {
+        const result = await updateProfile({
+            first_name: editedUser.first_name,
+            last_name: editedUser.last_name,
+            phone_number: editedUser.phone,
+            currency: editedUser.currency,
+            language: editedUser.language,
+            monthly_budget: editedUser.monthlyBudget,
+            savings_goal: editedUser.savingsGoal
+        })
+
+        if (result.success) {
+            setIsEditing(false)
+        } else {
+            alert('Failed to update profile: ' + JSON.stringify(result.error))
+        }
     }
 
     const handleCancelEdit = () => {
-        setEditedUser(user)
+        setEditedUser({
+            first_name: userData.first_name,
+            last_name: userData.last_name,
+            email: userData.email,
+            phone: userData.phone,
+            currency: userData.currency,
+            language: userData.language,
+            monthlyBudget: userData.monthlyBudget,
+            savingsGoal: userData.savingsGoal
+        })
         setIsEditing(false)
     }
 
-    const handleNotificationChange = (key) => {
-        setNotifications(prev => ({ ...prev, [key]: !prev[key] }))
+    const handleNotificationChange = async (key) => {
+        const newValue = !notifications[key]
+        setNotifications(prev => ({ ...prev, [key]: newValue }))
+
+        // Update on server
+        await updateProfile({
+            email_notifications: key === 'email' ? newValue : notifications.email,
+            push_notifications: key === 'push' ? newValue : notifications.push,
+            sms_alerts: key === 'sms' ? newValue : notifications.sms,
+            budget_alerts: key === 'budgetAlerts' ? newValue : notifications.budgetAlerts,
+            weekly_report: key === 'weeklyReport' ? newValue : notifications.weeklyReport
+        })
+    }
+
+    const handleLogout = async () => {
+        await logout()
+        router.push('/')
+    }
+
+    const handleChangePassword = async (e) => {
+        e.preventDefault()
+        setPasswordError('')
+        setPasswordSuccess('')
+
+        if (passwordData.new_password !== passwordData.confirm_password) {
+            setPasswordError('New passwords do not match')
+            return
+        }
+
+        setIsChangingPassword(true)
+        try {
+            await api.post('/users/change_password/', {
+                old_password: passwordData.old_password,
+                new_password: passwordData.new_password
+            })
+            setPasswordSuccess('Password changed successfully!')
+            setTimeout(() => {
+                setShowPasswordModal(false)
+                setPasswordData({ old_password: '', new_password: '', confirm_password: '' })
+            }, 2000)
+        } catch (error) {
+            setPasswordError(error.response?.data?.old_password?.[0] || 'Failed to change password')
+        } finally {
+            setIsChangingPassword(false)
+        }
+    }
+
+    const handleDeleteAccount = async () => {
+        // Implement account deletion
+        setShowDeleteModal(false)
+    }
+
+    const getInitials = () => {
+        if (userData.first_name && userData.last_name) {
+            return `${userData.first_name[0]}${userData.last_name[0]}`.toUpperCase()
+        }
+        if (userData.first_name) return userData.first_name[0].toUpperCase()
+        if (userData.email) return userData.email[0].toUpperCase()
+        return 'U'
+    }
+
+    const getDisplayName = () => {
+        if (userData.first_name && userData.last_name) {
+            return `${userData.first_name} ${userData.last_name}`
+        }
+        if (userData.first_name) return userData.first_name
+        if (userData.email) return userData.email.split('@')[0]
+        return 'User'
+    }
+
+    // Calculate budget progress
+    const totalBudgeted = budgets?.reduce((sum, b) => sum + (b.amount || 0), 0) || 0
+    const totalSpent = budgets?.reduce((sum, b) => sum + (b.spent_amount || 0), 0) || 0
+    const budgetProgress = totalBudgeted > 0 ? Math.round((totalSpent / totalBudgeted) * 100) : 0
+
+    // Calculate savings goal progress
+    const totalSavings = (summary?.total_income || 0) - (summary?.total_expenses || 0)
+    const savingsProgress = userData.savingsGoal > 0 ? Math.min(Math.round((totalSavings / userData.savingsGoal) * 100), 100) : 0
+
+    if (authLoading) {
+        return (
+            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+            </div>
+        )
     }
 
     return (
@@ -96,25 +260,28 @@ export default function Profile() {
                         <div className="w-24 h-24 lg:w-32 lg:h-32 rounded-2xl bg-white p-1 shadow-xl">
                             <div className="w-full h-full rounded-xl bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center">
                                 <span className="text-3xl lg:text-4xl font-bold text-white">
-                                    {user.name.charAt(0)}
+                                    {getInitials()}
                                 </span>
                             </div>
                         </div>
-                        <button className="absolute -bottom-2 -right-2 w-8 h-8 bg-white rounded-lg shadow-md flex items-center justify-center hover:bg-gray-50 transition-colors">
+                        <button
+                            onClick={() => setIsEditing(true)}
+                            className="absolute -bottom-2 -right-2 w-8 h-8 bg-white rounded-lg shadow-md flex items-center justify-center hover:bg-gray-50 transition-colors"
+                        >
                             <PencilIcon className="w-4 h-4 text-gray-600" />
                         </button>
                     </div>
 
                     {/* Mobile View Name */}
                     <div className="lg:hidden">
-                        <h1 className="text-xl font-bold text-white">{user.name}</h1>
-                        <p className="text-sm text-blue-100">{user.email}</p>
+                        <h1 className="text-xl font-bold text-white">{getDisplayName()}</h1>
+                        <p className="text-sm text-blue-100">{userData.email}</p>
                     </div>
                 </div>
 
                 {/* Desktop Welcome Message */}
                 <div className="hidden lg:block absolute bottom-4 right-8 text-white text-right">
-                    <p className="text-sm opacity-90">Member since {user.joinDate}</p>
+                    <p className="text-sm opacity-90">Member since {userData.joinDate}</p>
                 </div>
             </div>
 
@@ -122,24 +289,24 @@ export default function Profile() {
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-16 lg:pt-8">
                 <div className="lg:hidden mb-6">
                     {/* Mobile Greeting */}
-                    <h1 className="text-2xl font-bold text-gray-900">Welcome back, {user.name.split(' ')[0]}!</h1>
+                    <h1 className="text-2xl font-bold text-gray-900">Welcome back, {userData.first_name || 'User'}!</h1>
                     <p className="text-gray-500 text-sm mt-1">Manage your account settings</p>
                 </div>
 
                 {/* Mobile Tab Navigation - Horizontal Scroll */}
                 <div className="lg:hidden mb-6">
-                    <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4">
+                    <div className="flex gap-2 overflow-x-auto pb-2 -mx-4 px-4 scrollbar-hide">
                         {tabs.map((tab) => (
                             <button
                                 key={tab.id}
                                 onClick={() => setActiveTab(tab.id)}
                                 className={`
-                  flex items-center gap-2 px-4 py-2 rounded-xl whitespace-nowrap transition-all
-                  ${activeTab === tab.id
+                                    flex items-center gap-2 px-4 py-2 rounded-xl whitespace-nowrap transition-all
+                                    ${activeTab === tab.id
                                         ? 'bg-blue-600 text-white shadow-md'
                                         : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'
                                     }
-                `}
+                                `}
                             >
                                 <tab.icon className="w-4 h-4" />
                                 <span className="text-sm font-medium">{tab.name}</span>
@@ -155,9 +322,9 @@ export default function Profile() {
                         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden sticky top-6">
                             {/* User Info */}
                             <div className="p-6 bg-gradient-to-br from-blue-50 to-indigo-50 border-b border-gray-100">
-                                <h2 className="text-xl font-bold text-gray-900">{user.name}</h2>
-                                <p className="text-sm text-gray-600 mt-1">{user.email}</p>
-                                <p className="text-xs text-gray-500 mt-2">Member since {user.joinDate}</p>
+                                <h2 className="text-xl font-bold text-gray-900">{getDisplayName()}</h2>
+                                <p className="text-sm text-gray-600 mt-1">{userData.email}</p>
+                                <p className="text-xs text-gray-500 mt-2">Member since {userData.joinDate}</p>
                             </div>
 
                             {/* Navigation */}
@@ -167,12 +334,12 @@ export default function Profile() {
                                         key={tab.id}
                                         onClick={() => setActiveTab(tab.id)}
                                         className={`
-                      w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all mb-1
-                      ${activeTab === tab.id
+                                            w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all mb-1
+                                            ${activeTab === tab.id
                                                 ? 'bg-blue-600 text-white shadow-md'
                                                 : 'text-gray-700 hover:bg-gray-50'
                                             }
-                    `}
+                                        `}
                                     >
                                         <tab.icon className="w-5 h-5" />
                                         {tab.name}
@@ -181,7 +348,10 @@ export default function Profile() {
 
                                 <div className="border-t border-gray-200 my-4" />
 
-                                <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition-all">
+                                <button
+                                    onClick={handleLogout}
+                                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 transition-all"
+                                >
                                     <ArrowLeftOnRectangleIcon className="w-5 h-5" />
                                     Sign Out
                                 </button>
@@ -192,11 +362,11 @@ export default function Profile() {
                                 <div className="grid grid-cols-2 gap-3">
                                     <div className="text-center">
                                         <p className="text-xs text-gray-500">Transactions</p>
-                                        <p className="text-lg font-bold text-gray-900">{user.totalTransactions}</p>
+                                        <p className="text-lg font-bold text-gray-900">{summary?.transaction_count || 0}</p>
                                     </div>
                                     <div className="text-center">
                                         <p className="text-xs text-gray-500">Account Age</p>
-                                        <p className="text-lg font-bold text-gray-900">{user.accountAge}</p>
+                                        <p className="text-lg font-bold text-gray-900">{userData.accountAge}</p>
                                     </div>
                                 </div>
                             </div>
@@ -245,37 +415,48 @@ export default function Profile() {
                                     {/* Form */}
                                     <div className="p-6">
                                         <div className="space-y-4 max-w-2xl">
-                                            <div>
-                                                <label className="block text-sm font-medium text-gray-700 mb-2">Full Name</label>
-                                                <input
-                                                    type="text"
-                                                    value={isEditing ? editedUser.name : user.name}
-                                                    onChange={(e) => setEditedUser({ ...editedUser, name: e.target.value })}
-                                                    disabled={!isEditing}
-                                                    className={`
-                            w-full p-3 border rounded-xl transition-all
-                            ${isEditing
-                                                            ? 'border-gray-300 focus:ring-2 focus:ring-blue-500'
-                                                            : 'border-gray-200 bg-gray-50 text-gray-600'
-                                                        }
-                          `}
-                                                />
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-700 mb-2">First Name</label>
+                                                    <input
+                                                        type="text"
+                                                        value={isEditing ? editedUser.first_name : userData.first_name}
+                                                        onChange={(e) => setEditedUser({ ...editedUser, first_name: e.target.value })}
+                                                        disabled={!isEditing}
+                                                        className={`
+                                                            w-full p-3 border rounded-xl transition-all
+                                                            ${isEditing
+                                                                ? 'border-gray-300 focus:ring-2 focus:ring-blue-500'
+                                                                : 'border-gray-200 bg-gray-50 text-gray-600'
+                                                            }
+                                                        `}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm font-medium text-gray-700 mb-2">Last Name</label>
+                                                    <input
+                                                        type="text"
+                                                        value={isEditing ? editedUser.last_name : userData.last_name}
+                                                        onChange={(e) => setEditedUser({ ...editedUser, last_name: e.target.value })}
+                                                        disabled={!isEditing}
+                                                        className={`
+                                                            w-full p-3 border rounded-xl transition-all
+                                                            ${isEditing
+                                                                ? 'border-gray-300 focus:ring-2 focus:ring-blue-500'
+                                                                : 'border-gray-200 bg-gray-50 text-gray-600'
+                                                            }
+                                                        `}
+                                                    />
+                                                </div>
                                             </div>
 
                                             <div>
                                                 <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
                                                 <input
                                                     type="email"
-                                                    value={isEditing ? editedUser.email : user.email}
-                                                    onChange={(e) => setEditedUser({ ...editedUser, email: e.target.value })}
-                                                    disabled={!isEditing}
-                                                    className={`
-                            w-full p-3 border rounded-xl transition-all
-                            ${isEditing
-                                                            ? 'border-gray-300 focus:ring-2 focus:ring-blue-500'
-                                                            : 'border-gray-200 bg-gray-50 text-gray-600'
-                                                        }
-                          `}
+                                                    value={userData.email}
+                                                    disabled
+                                                    className="w-full p-3 border border-gray-200 bg-gray-50 text-gray-600 rounded-xl"
                                                 />
                                             </div>
 
@@ -283,16 +464,17 @@ export default function Profile() {
                                                 <label className="block text-sm font-medium text-gray-700 mb-2">Phone Number</label>
                                                 <input
                                                     type="tel"
-                                                    value={isEditing ? editedUser.phone : user.phone}
+                                                    value={isEditing ? editedUser.phone : userData.phone}
                                                     onChange={(e) => setEditedUser({ ...editedUser, phone: e.target.value })}
                                                     disabled={!isEditing}
                                                     className={`
-                            w-full p-3 border rounded-xl transition-all
-                            ${isEditing
+                                                        w-full p-3 border rounded-xl transition-all
+                                                        ${isEditing
                                                             ? 'border-gray-300 focus:ring-2 focus:ring-blue-500'
                                                             : 'border-gray-200 bg-gray-50 text-gray-600'
                                                         }
-                          `}
+                                                    `}
+                                                    placeholder="+237 XXXXXXXXX"
                                                 />
                                             </div>
 
@@ -305,7 +487,7 @@ export default function Profile() {
                                                         <div>
                                                             <p className="text-sm font-medium text-blue-900">Account Summary</p>
                                                             <p className="text-xs text-blue-700 mt-1">
-                                                                You&apos;ve made {user.totalTransactions} transactions since joining.
+                                                                You&apos;ve made {summary?.transaction_count || 0} transactions since joining.
                                                                 Keep up the great work!
                                                             </p>
                                                         </div>
@@ -327,10 +509,13 @@ export default function Profile() {
                                                 <KeyIcon className="w-5 h-5 text-gray-600" />
                                                 <div>
                                                     <p className="font-medium text-gray-900">Password</p>
-                                                    <p className="text-sm text-gray-500">Last changed 3 months ago</p>
+                                                    <p className="text-sm text-gray-500">Change your password</p>
                                                 </div>
                                             </div>
-                                            <button className="px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                                            <button
+                                                onClick={() => setShowPasswordModal(true)}
+                                                className="px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                                            >
                                                 Change
                                             </button>
                                         </div>
@@ -353,7 +538,7 @@ export default function Profile() {
                                                 <DevicePhoneMobileIcon className="w-5 h-5 text-gray-600" />
                                                 <div>
                                                     <p className="font-medium text-gray-900">Trusted Devices</p>
-                                                    <p className="text-sm text-gray-500">2 active sessions</p>
+                                                    <p className="text-sm text-gray-500">Manage your active sessions</p>
                                                 </div>
                                             </div>
                                             <button className="px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
@@ -410,7 +595,13 @@ export default function Profile() {
                                     <div className="space-y-6 max-w-2xl">
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-2">Currency</label>
-                                            <select className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500">
+                                            <select
+                                                value={isEditing ? editedUser.currency : userData.currency}
+                                                onChange={(e) => setEditedUser({ ...editedUser, currency: e.target.value })}
+                                                disabled={!isEditing}
+                                                className={`w-full p-3 border rounded-xl focus:ring-2 focus:ring-blue-500 ${isEditing ? 'border-gray-300' : 'border-gray-200 bg-gray-50'
+                                                    }`}
+                                            >
                                                 <option value="XAF">XAF - Central African CFA Franc</option>
                                                 <option value="USD">USD - US Dollar</option>
                                                 <option value="EUR">EUR - Euro</option>
@@ -420,11 +611,17 @@ export default function Profile() {
 
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-2">Language</label>
-                                            <select className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500">
-                                                <option>English</option>
-                                                <option>French</option>
-                                                <option>Spanish</option>
-                                                <option>Arabic</option>
+                                            <select
+                                                value={isEditing ? editedUser.language : userData.language}
+                                                onChange={(e) => setEditedUser({ ...editedUser, language: e.target.value })}
+                                                disabled={!isEditing}
+                                                className={`w-full p-3 border rounded-xl focus:ring-2 focus:ring-blue-500 ${isEditing ? 'border-gray-300' : 'border-gray-200 bg-gray-50'
+                                                    }`}
+                                            >
+                                                <option value="en">English</option>
+                                                <option value="fr">French</option>
+                                                <option value="es">Spanish</option>
+                                                <option value="ar">Arabic</option>
                                             </select>
                                         </div>
 
@@ -443,6 +640,23 @@ export default function Profile() {
                                                 <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${darkMode ? 'right-1' : 'left-1'}`} />
                                             </button>
                                         </div>
+
+                                        {isEditing && (
+                                            <div className="flex justify-end gap-3 pt-4">
+                                                <button
+                                                    onClick={handleCancelEdit}
+                                                    className="px-6 py-2 border border-gray-200 rounded-xl text-gray-700 hover:bg-gray-50"
+                                                >
+                                                    Cancel
+                                                </button>
+                                                <button
+                                                    onClick={handleSaveProfile}
+                                                    className="px-6 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700"
+                                                >
+                                                    Save Changes
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             )}
@@ -457,12 +671,17 @@ export default function Profile() {
                                             <div className="relative">
                                                 <input
                                                     type="number"
-                                                    value={user.monthlyBudget}
-                                                    className="w-full p-3 pl-12 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
+                                                    value={isEditing ? editedUser.monthlyBudget : userData.monthlyBudget}
+                                                    onChange={(e) => setEditedUser({ ...editedUser, monthlyBudget: parseInt(e.target.value) })}
+                                                    disabled={!isEditing}
+                                                    className={`w-full p-3 pl-12 border rounded-xl focus:ring-2 focus:ring-blue-500 ${isEditing ? 'border-gray-300' : 'border-gray-200 bg-gray-50'
+                                                        }`}
                                                 />
                                                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-medium">FCFA</span>
                                             </div>
-                                            <p className="text-xs text-gray-500 mt-2">You&apos;ve used 76% of your monthly budget</p>
+                                            <p className="text-xs text-gray-500 mt-2">
+                                                You&apos;ve used {budgetProgress}% of your total budget
+                                            </p>
                                         </div>
 
                                         <div>
@@ -470,8 +689,11 @@ export default function Profile() {
                                             <div className="relative">
                                                 <input
                                                     type="number"
-                                                    value={user.savingsGoal}
-                                                    className="w-full p-3 pl-12 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
+                                                    value={isEditing ? editedUser.savingsGoal : userData.savingsGoal}
+                                                    onChange={(e) => setEditedUser({ ...editedUser, savingsGoal: parseInt(e.target.value) })}
+                                                    disabled={!isEditing}
+                                                    className={`w-full p-3 pl-12 border rounded-xl focus:ring-2 focus:ring-blue-500 ${isEditing ? 'border-gray-300' : 'border-gray-200 bg-gray-50'
+                                                        }`}
                                                 />
                                                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-medium">FCFA</span>
                                             </div>
@@ -480,15 +702,32 @@ export default function Profile() {
                                         <div className="bg-green-50 rounded-xl p-4">
                                             <div className="flex items-center justify-between mb-2">
                                                 <span className="text-sm font-medium text-green-800">Progress to Goal</span>
-                                                <span className="text-sm font-bold text-green-800">42%</span>
+                                                <span className="text-sm font-bold text-green-800">{savingsProgress}%</span>
                                             </div>
                                             <div className="h-2 bg-green-200 rounded-full overflow-hidden">
-                                                <div className="h-full bg-green-600 rounded-full" style={{ width: '42%' }} />
+                                                <div className="h-full bg-green-600 rounded-full" style={{ width: `${savingsProgress}%` }} />
                                             </div>
                                             <p className="text-xs text-green-700 mt-2">
-                                                You&apos;re {formatXAF(840000)} away from your savings goal
+                                                You&apos;re {formatXAF(Math.max(0, userData.savingsGoal - totalSavings))} away from your savings goal
                                             </p>
                                         </div>
+
+                                        {isEditing && (
+                                            <div className="flex justify-end gap-3 pt-4">
+                                                <button
+                                                    onClick={handleCancelEdit}
+                                                    className="px-6 py-2 border border-gray-200 rounded-xl text-gray-700 hover:bg-gray-50"
+                                                >
+                                                    Cancel
+                                                </button>
+                                                <button
+                                                    onClick={handleSaveProfile}
+                                                    className="px-6 py-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700"
+                                                >
+                                                    Save Changes
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             )}
@@ -511,6 +750,73 @@ export default function Profile() {
                 </div>
             </div>
 
+            {/* Change Password Modal */}
+            {showPasswordModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowPasswordModal(false)}>
+                    <div className="bg-white rounded-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-xl font-bold text-gray-900">Change Password</h3>
+                            <button onClick={() => setShowPasswordModal(false)} className="p-1 hover:bg-gray-100 rounded-lg">
+                                <XMarkIcon className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        {passwordError && (
+                            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-sm text-red-600">
+                                <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" />
+                                {passwordError}
+                            </div>
+                        )}
+
+                        {passwordSuccess && (
+                            <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-600">
+                                {passwordSuccess}
+                            </div>
+                        )}
+
+                        <form onSubmit={handleChangePassword} className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Current Password</label>
+                                <input
+                                    type="password"
+                                    value={passwordData.old_password}
+                                    onChange={(e) => setPasswordData({ ...passwordData, old_password: e.target.value })}
+                                    className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
+                                    required
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+                                <input
+                                    type="password"
+                                    value={passwordData.new_password}
+                                    onChange={(e) => setPasswordData({ ...passwordData, new_password: e.target.value })}
+                                    className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
+                                    required
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
+                                <input
+                                    type="password"
+                                    value={passwordData.confirm_password}
+                                    onChange={(e) => setPasswordData({ ...passwordData, confirm_password: e.target.value })}
+                                    className="w-full p-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500"
+                                    required
+                                />
+                            </div>
+                            <button
+                                type="submit"
+                                disabled={isChangingPassword}
+                                className="w-full py-3 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50"
+                            >
+                                {isChangingPassword ? 'Changing...' : 'Change Password'}
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             {/* Delete Account Modal */}
             {showDeleteModal && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setShowDeleteModal(false)}>
@@ -530,10 +836,7 @@ export default function Profile() {
                                 Cancel
                             </button>
                             <button
-                                onClick={() => {
-                                    // Handle delete
-                                    setShowDeleteModal(false)
-                                }}
+                                onClick={handleDeleteAccount}
                                 className="flex-1 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700 transition-colors"
                             >
                                 Delete
