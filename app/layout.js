@@ -19,7 +19,7 @@ export default function RootLayout({ children }) {
           <div className="flex h-full">
             <Navbar />
             <main className="flex-1 overflow-auto lg:ml-72">
-              <div className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-4 lg:py-6">
+              <div className="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8 py-16 lg:py-6">
                 {children}
               </div>
             </main>
