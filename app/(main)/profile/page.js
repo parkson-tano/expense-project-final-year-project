@@ -316,7 +316,7 @@ export default function Profile() {
                 </div>
 
                 {/* Desktop Sidebar + Content */}
-                <div className="grid lg:grid-cols-4 gap-6">
+                <div className="grid lg:grid-cols-4 gap-2">
                     {/* Desktop Sidebar */}
                     <div className="hidden lg:block lg:col-span-1">
                         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden sticky top-6">
@@ -625,7 +625,7 @@ export default function Profile() {
                                             </select>
                                         </div>
 
-                                        <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                                        {/* <div className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
                                             <div className="flex items-center gap-3">
                                                 {darkMode ? <MoonIcon className="w-5 h-5 text-gray-600" /> : <SunIcon className="w-5 h-5 text-gray-600" />}
                                                 <div>
@@ -639,7 +639,7 @@ export default function Profile() {
                                             >
                                                 <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-transform ${darkMode ? 'right-1' : 'left-1'}`} />
                                             </button>
-                                        </div>
+                                        </div> */}
 
                                         {isEditing && (
                                             <div className="flex justify-end gap-3 pt-4">
@@ -677,7 +677,7 @@ export default function Profile() {
                                                     className={`w-full p-3 pl-12 border rounded-xl focus:ring-2 focus:ring-blue-500 ${isEditing ? 'border-gray-300' : 'border-gray-200 bg-gray-50'
                                                         }`}
                                                 />
-                                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-medium">FCFA</span>
+                                                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium">FCFA</span>
                                             </div>
                                             <p className="text-xs text-gray-500 mt-2">
                                                 You&apos;ve used {budgetProgress}% of your total budget
@@ -695,7 +695,7 @@ export default function Profile() {
                                                     className={`w-full p-3 pl-12 border rounded-xl focus:ring-2 focus:ring-blue-500 ${isEditing ? 'border-gray-300' : 'border-gray-200 bg-gray-50'
                                                         }`}
                                                 />
-                                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500 font-medium">FCFA</span>
+                                                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-medium">FCFA</span>
                                             </div>
                                         </div>
 

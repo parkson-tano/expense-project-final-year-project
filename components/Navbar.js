@@ -96,7 +96,7 @@ export default function MobileNav() {
     if (!user) return null
 
     return (
-        <>
+        <div>
             {/* Desktop Sidebar */}
             <aside className="hidden lg:fixed lg:inset-y-0 lg:flex lg:w-72 lg:flex-col">
                 <div className="flex flex-col h-full bg-white/80 backdrop-blur-xl border-r border-gray-200/80 shadow-sm">
@@ -165,7 +165,7 @@ export default function MobileNav() {
                         </div>
 
                         {/* Quick Actions */}
-                        <div className="mt-8 pt-6 border-t border-gray-100">
+                        {/* <div className="mt-8 pt-6 border-t border-gray-100">
                             <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-4">
                                 <p className="text-xs font-medium text-gray-500 mb-2">QUICK ACTIONS</p>
                                 <button className="w-full flex items-center gap-3 px-3 py-2 bg-white rounded-lg text-sm text-gray-700 hover:bg-gray-50 transition-colors mb-2">
@@ -185,7 +185,7 @@ export default function MobileNav() {
                                     <span>Settings</span>
                                 </button>
                             </div>
-                        </div>
+                        </div> */}
                     </nav>
 
                     {/* User Profile Section */}
@@ -414,6 +414,6 @@ export default function MobileNav() {
             {/* Spacer for fixed header and bottom nav on mobile */}
             <div className="lg:hidden h-16" />
             <div className="lg:hidden h-16" />
-        </>
+        </div>
     )
 }
